@@ -17,6 +17,20 @@ Ce projet s'intègre en synergie directe avec la plateforme de robotique chirurg
 
 ---
 
+## 📸 Galerie & Supervision 3D Temps Réel (Three.js WebGL)
+
+### 1. Supervision Rapprochée de la Table Stérile & Télémétrie MQTT
+Vue interactive centrée sur la table chirurgicale avec badges d'ambiance glassmorphism en temps réel (Température 21.4 °C, Humidité 48 %, Luminosité 320 lx), surpression stérile active ISO 5 ($\Delta P = +15.2\text{ Pa}$), volet CVC orientable SG90 et panneau de simulation d'incidents :
+![Digital Twin Table Telemetry](docs/images/01_digital_twin_table_telemetry.jpg)
+
+---
+
+### 2. Vue Panoramique du Bloc Opératoire & Contrôle d'Asepsie du Sas
+Perspective globale 3D de la salle blanche montrant le sas d'entrée avec détection de porte ultrasonore (HC-SR04), scialytique chirurgical procédural, moniteur ECG multiparamétrique et jauge de conformité de séance à 100 % :
+![Digital Twin Room Overview](docs/images/02_digital_twin_room_wide_overview.jpg)
+
+---
+
 ## 📸 Schémas d'Architecture & Processus Médical
 
 ### 1. Architecture Matérielle & Flux de Données
