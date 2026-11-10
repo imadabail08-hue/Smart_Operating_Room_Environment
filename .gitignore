@@ -1,0 +1,15 @@
+# PlatformIO Build Directory
+.pio/
+
+# Editor files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Archives
+*.zip
+*.tar.gz
+
+# System files
+.DS_Store
+Thumbs.db

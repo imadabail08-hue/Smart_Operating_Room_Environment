@@ -1,0 +1,78 @@
+%% ============================================================================
+%% Smart Operating Room Environment - Synoptique d'architecture matérielle
+%% Rendu : mmdc -i architecture_materielle.mmd -o architecture_materielle.png -s 3
+%% Source de vérité des broches : constantes de src/main.cpp (firmware 1.2.1)
+%% ============================================================================
+%%{init: {"theme": "base", "flowchart": {"curve": "linear", "htmlLabels": true, "nodeSpacing": 40, "rankSpacing": 70}, "themeVariables": {"fontFamily": "Segoe UI, Arial, sans-serif", "fontSize": "14px", "lineColor": "#1F4E79"}}}%%
+flowchart LR
+
+  PSU["Alimentation USB 5 V<br/>régulateur interne 3,3 V"]:::power
+
+  subgraph SENS["Capteurs"]
+    direction TB
+    BME["BME280<br/>T, H, P<br/>I2C 0x76 ou 0x77<br/>3,3 V"]:::sensor
+    LDR["LDR + pont diviseur 10 kΩ<br/>sortie analogique 0 à 3,3 V"]:::sensor
+    US["HC-SR04 ultrason<br/>alim. 5 V<br/>détection porte, seuil 15 cm"]:::sensor
+    DIV["Pont diviseur ECHO<br/>5 V vers 3,3 V<br/>2 résistances"]:::protect
+  end
+
+  subgraph MCU["ESP32 DevKit v1 - ESP32-WROOM-32 - firmware 1.2.1"]
+    direction TB
+    I2C["Bus I2C 100 kHz<br/>SDA = GPIO 21<br/>SCL = GPIO 22"]:::mcu
+    ADC["ADC1 12 bits, atténuation 11 dB<br/>LDR = GPIO 33"]:::mcu
+    GPIOUS["GPIO numérique<br/>TRIG = GPIO 4 sortie<br/>ECHO = GPIO 5 entrée"]:::mcu
+    PWM["PWM LEDC 50 Hz<br/>impulsions 500 à 2400 µs<br/>Servo = GPIO 25"]:::mcu
+    GOUT["Sorties numériques<br/>LED alerte = GPIO 32<br/>Buzzer = GPIO 26"]:::mcu
+    CORE["Boucle principale<br/>readDoor, readSensors, evaluateAlerts,<br/>updateFan, updateOutputs, publishTelemetry"]:::core
+    NET["Wi-Fi 802.11 b/g/n STA<br/>PubSubClient MQTT, HTTPClient"]:::mcu
+  end
+
+  subgraph ACT["Actionneurs"]
+    direction TB
+    SERVO["Servomoteur SG90<br/>volet CVC, 45° à 135°<br/>alim. 5 V, signal 3,3 V"]:::actuator
+    LED["LED d'alerte + résistance série<br/>1 Hz warning, 5 Hz critical"]:::actuator
+    BUZ["Buzzer actif<br/>200 ms par seconde<br/>en niveau CRITICAL"]:::actuator
+  end
+
+  subgraph CLOUD["Réseau et supervision"]
+    direction TB
+    AP["Point d'accès Wi-Fi<br/>2,4 GHz"]:::net
+    BRK["Broker MQTT HiveMQ<br/>TCP 1883 côté ESP32<br/>WSS 8884 côté navigateur"]:::net
+    TWIN["Jumeau numérique 3D<br/>index.html + app.js, Three.js<br/>FusionEngine, Chart.js"]:::twin
+    WH["Webhook HTTPS<br/>repli USE_HTTP_FALLBACK"]:::net
+  end
+
+  PSU --> MCU
+  PSU -. "5 V" .-> US
+  PSU -. "5 V" .-> SERVO
+
+  BME <-- "SDA / SCL" --> I2C
+  LDR -- "analogique" --> ADC
+  GPIOUS -- "TRIG 3,3 V" --> US
+  US -- "ECHO 5 V" --> DIV
+  DIV -- "ECHO 3,3 V" --> GPIOUS
+
+  I2C --> CORE
+  ADC --> CORE
+  GPIOUS --> CORE
+  CORE --> PWM
+  CORE --> GOUT
+  CORE <--> NET
+
+  PWM -- "signal PWM" --> SERVO
+  GOUT -- "GPIO 32" --> LED
+  GOUT -- "GPIO 26" --> BUZ
+
+  NET <-- "Wi-Fi" --> AP
+  AP <-- "Internet" --> BRK
+  BRK <-- "télémétrie, alert, event, status<br/>cmd : fan, mute, ack, publish_now" --> TWIN
+  NET -- "HTTPS POST JSON" --> WH
+
+  classDef power fill:#FDEBD0,stroke:#CA6F1E,stroke-width:2px,color:#1B2631
+  classDef sensor fill:#D5F5E3,stroke:#1E8449,stroke-width:2px,color:#1B2631
+  classDef protect fill:#FEF9E7,stroke:#B7950B,stroke-width:2px,stroke-dasharray:5 3,color:#1B2631
+  classDef mcu fill:#EAF2F8,stroke:#1F4E79,stroke-width:2px,color:#1B2631
+  classDef core fill:#D6EAF8,stroke:#1F4E79,stroke-width:4px,color:#1B2631
+  classDef actuator fill:#FADBD8,stroke:#C0392B,stroke-width:2px,color:#1B2631
+  classDef net fill:#F4ECF7,stroke:#6C3483,stroke-width:2px,color:#1B2631
+  classDef twin fill:#E8DAEF,stroke:#6C3483,stroke-width:4px,color:#1B2631

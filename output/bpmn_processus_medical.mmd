@@ -1,0 +1,99 @@
+﻿flowchart LR
+
+  %% ---------------- COULOIR 1 : SURVEILLANCE CONTINUE ----------------
+  subgraph L1["Pool ESP32 - Couloir 1 : Surveillance continue"]
+    direction TB
+    S0(("DÃ©but<br/>Mise sous tension")):::start
+    T0["setup : auto-test LED, buzzer, servo<br/>init I2C, ADC 12 bits, PWM 50 Hz"]:::task
+    T1["readDoor toutes les 150 ms<br/>HC-SR04 + anti-rebond 80 ms"]:::task
+    T2["readSensors toutes les 2 s<br/>BME280 T/H/P + LDR moyennÃ© sur 16 Ã©chantillons"]:::task
+    G0{"Lecture<br/>T/H valide ?"}:::gateway
+    T2F["dhtFailCount + 1<br/>3 Ã©checs = WARNING, 10 = CRITICAL"]:::task
+  end
+
+  %% ---------------- COULOIR 2 : FRANCHISSEMENT DE SEUILS ----------------
+  subgraph L2["Pool ESP32 - Couloir 2 : Franchissement de seuils"]
+    direction TB
+    T3[["evaluateAlerts : levelHigh / levelLow<br/>comparateurs Ã  hystÃ©rÃ©sis"]]:::subproc
+    G1{"Seuil franchi ?<br/>niveau d'alerte &gt; 0"}:::gateway
+    G2{"Niveau<br/>global"}:::gateway
+    T4["publishEvent sur sor-p10/bloc-or1/alert<br/>code, niveau, valeur"]:::task
+  end
+
+  %% ---------------- COULOIR 3 : ASSERVISSEMENT ET ALARME ----------------
+  subgraph L3["Pool ESP32 - Couloir 3 : Asservissement CVC et alarme"]
+    direction TB
+    G3{"updateFan<br/>T â‰¥ 23,5 Â°C ou H â‰¥ 55 %<br/>ou T &gt; 26 Â°C ?"}:::gateway
+    T5["fanOn = true<br/>updateServo : balayage 45Â° â†” 135Â°<br/>pas de 3Â° toutes les 15 ms"]:::task
+    T5B["fanOn = false<br/>servo ramenÃ© Ã  0Â°<br/>arrÃªt si T â‰¤ 22,5 Â°C et H â‰¤ 50 %"]:::task
+    T6["LED GPIO 32<br/>WARNING : 1 Hz | CRITICAL : 5 Hz"]:::task
+    G4{"Niveau = CRITICAL<br/>et buzzer non muet ?"}:::gateway
+    T7["DÃ©clenchement alarme<br/>buzzer GPIO 26 : 200 ms par seconde"]:::alarm
+    E1(("Ã‰vÃ©nement<br/>alerte publiÃ©e")):::inter
+  end
+
+  %% ---------------- COULOIR 4 : JUMEAU NUMERIQUE / FUSION AI ----------------
+  subgraph L4["Pool Jumeau numÃ©rique - Couloir 4 : Fusion AI"]
+    direction TB
+    T8["publishTelemetry : JSON toutes les 2 s<br/>MQTT TCP 1883 puis WSS 8884 vers app.js"]:::task
+    T9[["FusionEngine.evaluate<br/>score 0-100, corrÃ©lations, pente Â°C/min"]]:::subproc
+    G5{"Score â‰¥ 40 ?<br/>HIGH ou CRITICAL"}:::gateway
+    T10["emitUniqueAlert<br/>anti-bruit 60 s + journal d'audit"]:::task
+  end
+
+  %% ---------------- COULOIR 5 : EQUIPE SOIGNANTE ----------------
+  subgraph L5["Pool Ã‰quipe soignante - Couloir 5 : Acquittement"]
+    direction TB
+    E2(("RÃ©ception<br/>alarme visuelle<br/>et sonore")):::inter
+    T11["Ã‰valuation clinique :<br/>porte, ventilation, cause"]:::manual
+    G6{"Action<br/>corrective ?"}:::gateway
+    T12["Fermeture de la porte ou<br/>forÃ§age ventilation fan = on"]:::manual
+    T13["Acquittement dans le jumeau<br/>publication sur /cmd : ack = true"]:::manual
+    T14["onMqttMessage<br/>buzzerMuted = true<br/>Ã©vÃ©nement ACK"]:::task
+    G7{"Retour Ã  la normale ?<br/>hystÃ©rÃ©sis franchie"}:::gateway
+    E3(("Fin<br/>Ã©vÃ©nement cleared<br/>buzzerMuted = false")):::endEv
+  end
+
+  %% ---------------- FLUX DE SEQUENCE ----------------
+  S0 --> T0 --> T1 --> T2 --> G0
+  G0 -- "oui" --> T3
+  G0 -- "non" --> T2F --> T3
+  T3 --> G1
+  G1 -- "non : NORMAL" --> T8
+  G1 -- "oui" --> G2
+  G1 -- "oui" --> T4
+  G2 -- "WARNING = 1" --> T6
+  G2 -- "CRITICAL = 2" --> T6
+  T4 --> E1
+  T3 --> G3
+  G3 -- "oui" --> T5
+  G3 -- "non" --> T5B
+  T6 --> G4
+  G4 -- "oui" --> T7
+  G4 -- "non" --> T8
+  T7 --> E2
+  E1 --> T8
+  T5 --> T8
+  T5B --> T8
+  T8 --> T9
+  T9 --> G5
+  G5 -- "oui" --> T10
+  G5 -- "non" --> T1
+  T10 --> E2
+  E2 --> T11 --> G6
+  G6 -- "oui" --> T12
+  G6 -- "non" --> T13
+  T12 --> T13
+  T13 --> T14 --> G7
+  G7 -- "non : boucle de surveillance" --> T1
+  G7 -- "oui" --> E3
+
+  %% ---------------- STYLES BPMN ----------------
+  classDef start fill:#D5F5E3,stroke:#1E8449,stroke-width:3px,color:#145A32
+  classDef endEv fill:#FADBD8,stroke:#922B21,stroke-width:5px,color:#641E16
+  classDef inter fill:#FEF9E7,stroke:#B7950B,stroke-width:3px,color:#7D6608
+  classDef task fill:#EAF2F8,stroke:#1F4E79,stroke-width:2px,color:#1B2631
+  classDef manual fill:#F4ECF7,stroke:#6C3483,stroke-width:2px,color:#1B2631
+  classDef subproc fill:#D6EAF8,stroke:#1F4E79,stroke-width:3px,color:#1B2631
+  classDef gateway fill:#FDEBD0,stroke:#CA6F1E,stroke-width:2px,color:#1B2631
+  classDef alarm fill:#FADBD8,stroke:#C0392B,stroke-width:3px,color:#641E16

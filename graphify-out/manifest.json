@@ -1,0 +1,41 @@
+{
+  ".vscode/c_cpp_properties.json": {
+    "mtime": 1792755714.752254,
+    "seen": 1792873602.5519638,
+    "ast_hash": "5ace0cc8b2fdf916841c880cb2b39667",
+    "semantic_hash": "5ace0cc8b2fdf916841c880cb2b39667",
+    "ast_empty": true
+  },
+  ".vscode/extensions.json": {
+    "mtime": 1792755714.7552767,
+    "seen": 1792873602.5519722,
+    "ast_hash": "b4fe65422789c169a6e60ad8eeb1d8c6",
+    "semantic_hash": "b4fe65422789c169a6e60ad8eeb1d8c6",
+    "ast_empty": true
+  },
+  ".vscode/launch.json": {
+    "mtime": 1792755714.7602546,
+    "seen": 1792873602.5519757,
+    "ast_hash": "fbffa7b76c5618d9bda30cd11e039dcf",
+    "semantic_hash": "fbffa7b76c5618d9bda30cd11e039dcf",
+    "ast_empty": true
+  },
+  "app.js": {
+    "mtime": 1792767378.280447,
+    "seen": 1792873602.5519783,
+    "ast_hash": "e359dbd1a175ab69fce30f5955654e3e",
+    "semantic_hash": "e359dbd1a175ab69fce30f5955654e3e"
+  },
+  "include/config.h": {
+    "mtime": 1792755334.966706,
+    "seen": 1792873602.5522585,
+    "ast_hash": "c8d16d046b8738066c419b2957effb08",
+    "semantic_hash": "c8d16d046b8738066c419b2957effb08"
+  },
+  "src/main.cpp": {
+    "mtime": 1792770864.1589746,
+    "seen": 1792873602.5524628,
+    "ast_hash": "4d1956a566b29ef522e5bd10dc2e7c64",
+    "semantic_hash": "4d1956a566b29ef522e5bd10dc2e7c64"
+  }
+}

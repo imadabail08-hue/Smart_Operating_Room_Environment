@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Operating Room Digital Twin — Bloc Opératoire 3D</title>
+  
+  <!-- Polices Google Font Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  
+  <!-- 1. Interface & Design : Tailwind CSS v3 via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            navy: {
+              950: '#07111e',
+              900: '#0b1a32',
+              850: '#0f2242',
+              800: '#162e54',
+              700: '#1f3e70'
+            },
+            clinical: {
+              blue: '#0078d4',
+              cyan: '#38bdf8',
+              ok: '#16a34a',
+              warn: '#f59e0b',
+              crit: '#dc2626'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Feuilles de style personnalisées & Toast Notyf -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.css">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- 2. Moteur Graphique & Animations 3D -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
+  <!-- 3. Télémétrie, Graphiques & Micro-animations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.383.0/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-900 font-sans antialiased overflow-x-hidden selection:bg-blue-500 selection:text-white">
+
+  <div class="app-layout flex min-h-screen w-screen overflow-hidden">
+    <!-- ================================================================= -->
+    <!-- 1. SIDEBAR NAVIGATION GAUCHE (Exacte Référence)                   -->
+    <!-- ================================================================= -->
+    <aside class="sidebar w-64 min-w-[16rem] bg-gradient-to-b from-navy-900 via-navy-900 to-navy-950 text-white flex flex-col justify-between border-r border-white/10 shadow-2xl z-40 select-none">
+      <div class="p-6 pb-4">
+        <!-- Logo et Titre exact du projet -->
+        <div class="brand mb-8 flex items-start gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-clinical-blue to-clinical-cyan flex items-center justify-center text-white shadow-lg shadow-blue-500/30 flex-shrink-0">
+            <i data-lucide="activity" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h1 class="text-[15px] font-bold tracking-tight text-white leading-tight">Smart Operating Room</h1>
+            <span class="text-xs font-semibold text-clinical-cyan tracking-wider uppercase block mt-0.5">Digital Twin 3D</span>
+          </div>
+        </div>
+
+        <!-- 5 Onglets fonctionnels avec état actif bleu royal -->
+        <nav class="sidebar-nav flex flex-col gap-1.5" aria-label="Navigation principale">
+          <button type="button" class="nav-btn active flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-slate-300 transition-all duration-200" data-view="overview" aria-current="page">
+            <i data-lucide="home" class="w-4 h-4"></i>
+            <span>Vue d'ensemble</span>
+          </button>
+          <button type="button" class="nav-btn flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-all duration-200" data-view="room" aria-current="false">
+            <i data-lucide="bed" class="w-4 h-4"></i>
+            <span>Salle opératoire</span>
+          </button>
+          <button type="button" class="nav-btn flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-all duration-200" data-view="live" aria-current="false">
+            <i data-lucide="activity" class="w-4 h-4"></i>
+            <span>Données temps réel</span>
+          </button>
+          <button type="button" class="nav-btn flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-all duration-200" data-view="events" aria-current="false">
+            <i data-lucide="bell" class="w-4 h-4"></i>
+            <span>Événements</span>
+            <span class="badge-counter ml-auto bg-clinical-crit text-white text-[10px] font-bold px-2 py-0.5 rounded-full" id="navEventsCounter"></span>
+          </button>
+          <button type="button" class="nav-btn flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-all duration-200" data-view="reports" aria-current="false">
+            <i data-lucide="file-text" class="w-4 h-4"></i>
+            <span>Rapports</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- Pied de sidebar : Télémétrie MQTT & Statut -->
+      <div class="p-5 bg-black/25 border-t border-white/10 flex flex-col gap-3">
+        <div>
+          <label for="dataSourceSelect" class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Source télémétrie</label>
+          <select id="dataSourceSelect" class="w-full bg-navy-850 border border-slate-700/80 rounded-md text-white text-xs px-2.5 py-1.5 outline-none focus:border-clinical-blue cursor-pointer">
+            <option value="mqtt" selected>Broker MQTT (ESP32 Matériel)</option>
+            <option value="serial">🔌 Port Série USB (Terminal Direct)</option>
+            <option value="sim">Simulation locale (60 FPS)</option>
+            <option value="replay">Relecture de séance</option>
+          </select>
+          <div id="mqttQuickConfig" class="mt-2">
+            <input type="text" id="mqttBaseTopicInput" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-clinical-cyan font-mono" value="sor-p10/bloc-or1">
+            <button id="mqttReconnectBtn" class="mt-1 text-[10px] text-slate-400 hover:text-white underline" type="button">Forcer reconnexion MQTT</button>
+          </div>
+          <div id="serialQuickConfig" class="mt-2 hidden">
+            <button id="btnConnectSerial" class="w-full py-1.5 px-2 bg-clinical-blue hover:bg-blue-600 text-xs font-semibold rounded text-white flex items-center justify-center gap-1.5 transition" type="button">
+              <i data-lucide="usb" class="w-3.5 h-3.5"></i> <span>Connecter Terminal USB</span>
+            </button>
+            <p class="text-[10px] text-slate-400 mt-1 text-center font-mono">115200 bauds • Chrome/Edge</p>
+          </div>
+          <input type="file" id="replayFileInput" accept=".csv,.json" class="hidden">
+          <button id="replayTriggerBtn" class="mt-2 w-full py-1.5 px-2 bg-navy-800 hover:bg-navy-700 text-xs rounded text-slate-200 flex items-center justify-center gap-1.5 hidden" type="button">
+            <i data-lucide="upload" class="w-3.5 h-3.5"></i> <span>Charger fichier...</span>
+          </button>
+        </div>
+
+        <div class="connection-status-pill flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full text-xs font-semibold">
+          <span class="status-dot w-2 h-2 rounded-full bg-clinical-cyan shadow-[0_0_8px_#38bdf8]"></span>
+          <span id="connStatusLabel" class="text-slate-200">Mode Simulation</span>
+        </div>
+
+        <div class="flex justify-between items-center text-[11px] text-slate-400">
+          <span>Actualisation :</span>
+          <time id="lastSeenTimestamp" class="text-clinical-cyan font-mono font-bold">--:--:--</time>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ================================================================= -->
+    <!-- 2. CONTENU PRINCIPAL                                              -->
+    <!-- ================================================================= -->
+    <main class="main-content flex-1 min-w-0 p-6 flex flex-col overflow-y-auto bg-slate-100">
+      
+      <!-- En-tête supérieur avec indicateurs d'asepsie clinique -->
+      <header class="flex justify-between items-center mb-5 flex-wrap gap-4">
+        <div>
+          <h2 class="text-2xl font-extrabold text-navy-950 tracking-tight" id="viewHeading">Vue d'ensemble</h2>
+          <p class="text-xs text-slate-500 font-medium mt-0.5" id="viewSubheading">Bloc Opératoire Stérile OR-1 • Surveillance environnementale 3D</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <!-- Statut de conformité globale -->
+          <div id="globalComplianceBadge" class="compliance-badge ok flex items-center gap-2.5 px-4 py-2 rounded-xl bg-green-100/90 border border-green-300 text-green-800 shadow-sm transition-all duration-300">
+            <span id="globalComplianceIcon" class="w-5 h-5 flex items-center justify-center"><i data-lucide="check-circle-2"></i></span>
+            <div class="leading-none">
+              <span id="globalComplianceTitle" class="text-xs font-bold uppercase tracking-wider block">Bloc Conforme</span>
+              <span id="globalComplianceSub" class="text-[10px] font-medium opacity-85 mt-0.5 block">Paramètres chirurgicaux nominaux</span>
+            </div>
+          </div>
+
+          <!-- Score Fusion AI (Risque clinique 0-100) -->
+          <div class="fusion-risk-pill flex items-center gap-2.5 bg-white px-3.5 py-1.5 rounded-full border border-slate-200 shadow-sm" title="Score de risque clinique calculé par Fusion AI">
+            <div class="w-8 h-8 relative flex items-center justify-center">
+              <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                <path class="fill-none stroke-slate-200 stroke-[3.5]" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                <path id="riskRingFill" class="fill-none stroke-clinical-ok stroke-[3.5] transition-all duration-500" stroke-dasharray="0, 100" stroke-linecap="round" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+              </svg>
+              <span id="fusionRiskValue" class="absolute text-[11px] font-bold text-navy-950 font-mono">0</span>
+            </div>
+            <div class="leading-tight">
+              <span class="text-[9px] font-bold text-clinical-blue uppercase tracking-wider block">Fusion AI</span>
+              <span id="fusionRiskState" class="text-[11px] font-semibold text-slate-700 block">Risque Faible</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- =============================================================== -->
+      <!-- VUE 1 : VUE D'ENSEMBLE (Three.js 3D + 4 Badges Flottants)       -->
+      <!-- =============================================================== -->
+      <section id="view-overview" class="view-section active flex flex-col gap-4">
+        
+        <!-- Bandeau d'alerte corrélation Fusion AI (animé par GSAP) -->
+        <div id="overviewAiAlertBanner" class="ai-alert-banner hidden flex items-center gap-3 p-3 px-4 bg-amber-50 border-l-4 border-amber-500 rounded-lg text-amber-900 shadow-sm text-xs font-medium" role="alert">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 flex-shrink-0"></i>
+          <div class="flex-1">
+            <strong id="aiBannerRuleTitle" class="font-bold block">Alerte d'aérocontamination croisée</strong>
+            <span id="aiBannerRuleText">Analyse continue des capteurs physiques...</span>
+          </div>
+          <time id="aiBannerTime" class="text-[10px] text-amber-700 font-mono font-semibold">--:--:--</time>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- PIPELINE WORKFLOW AUTOMATION & FUSION AI (Projet 10 • Santé 4.0) -->
+        <!-- =============================================================== -->
+        <section class="w-full bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/90 shadow-sm p-3.5 px-5" aria-label="Pipeline Workflow Système">
+          <div class="flex items-center justify-between mb-2.5 flex-wrap gap-2">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <h3 class="text-xs font-bold text-navy-950 uppercase tracking-wider">Workflow Système • Surveillance & Supervision Connectée</h3>
+              <span class="text-[10px] bg-slate-100 text-slate-600 font-mono px-2 py-0.5 rounded-full font-semibold border border-slate-200">ESP32 ➔ n8n ➔ Fusion AI ➔ Digital Twin</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-slate-500 font-mono">Liaison active :</span>
+              <span class="text-[11px] font-bold text-clinical-blue font-mono bg-blue-50 px-2 py-0.5 rounded border border-blue-200" id="pipelineSourceBadge">MQTT HiveMQ (sor-p10/bloc-or1)</span>
+            </div>
+          </div>
+
+          <!-- 6 Étapes du Workflow (Poster Projet 10 & Pipeline n8n) -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            <!-- 1. Capteurs Physiques -->
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-1 transition-all hover:border-slate-300 shadow-sm" id="wfStep1">
+              <div class="flex items-center justify-between">
+                <span class="text-[9px] font-extrabold uppercase text-slate-400">1. Capteurs</span>
+                <span class="w-2 h-2 rounded-full bg-emerald-500" id="wfStep1Led"></span>
+              </div>
+              <span class="text-[11px] font-bold text-navy-900 leading-tight">BME280 • LDR • HC-SR04</span>
+              <span class="text-[10px] text-slate-600 font-mono truncate" id="wfStepSensorsVal">21.4°C / 48% / 320lx</span>
+            </div>
+
+            <!-- 2. ESP32 Terminal -->
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-1 transition-all hover:border-slate-300 shadow-sm" id="wfStep2">
+              <div class="flex items-center justify-between">
+                <span class="text-[9px] font-extrabold uppercase text-slate-400">2. ESP32 Acquisition</span>
+                <span class="w-2 h-2 rounded-full bg-emerald-500" id="wfStep2Led"></span>
+              </div>
+              <span class="text-[11px] font-bold text-navy-900 leading-tight">Terminal & Émission</span>
+              <span class="text-[10px] text-slate-600 font-mono truncate" id="wfStepEspVal">MQTT & Serial 115k</span>
+            </div>
+
+            <!-- 3. Workflow n8n -->
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-1 transition-all hover:border-slate-300 shadow-sm" id="wfStep3">
+              <div class="flex items-center justify-between">
+                <span class="text-[9px] font-extrabold uppercase text-slate-400">3. Workflow n8n</span>
+                <span class="w-2 h-2 rounded-full bg-emerald-500" id="wfStep3Led"></span>
+              </div>
+              <span class="text-[11px] font-bold text-navy-900 leading-tight">Webhook HTTP POST</span>
+              <span class="text-[10px] text-slate-600 font-mono truncate" id="wfStepN8nVal">Normalisation OK</span>
+            </div>
+
+            <!-- 4. Fusion AI -->
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-1 transition-all hover:border-slate-300 shadow-sm" id="wfStep4">
+              <div class="flex items-center justify-between">
+                <span class="text-[9px] font-extrabold uppercase text-slate-400">4. Fusion AI</span>
+                <span class="w-2 h-2 rounded-full bg-clinical-blue" id="wfStep4Led"></span>
+              </div>
+              <span class="text-[11px] font-bold text-navy-900 leading-tight">Classification Risque</span>
+              <span class="text-[10px] text-emerald-700 font-bold font-mono truncate" id="wfStepAiVal">NORMAL (Score 0)</span>
+            </div>
+
+            <!-- 5. Digital Twin 3D -->
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-1 transition-all hover:border-slate-300 shadow-sm" id="wfStep5">
+              <div class="flex items-center justify-between">
+                <span class="text-[9px] font-extrabold uppercase text-slate-400">5. Jumeau 3D</span>
+                <span class="w-2 h-2 rounded-full bg-emerald-500" id="wfStep5Led"></span>
+              </div>
+              <span class="text-[11px] font-bold text-navy-900 leading-tight">WebGL Three.js</span>
+              <span class="text-[10px] text-slate-600 font-mono truncate" id="wfStep3dVal">60 FPS • Synchronisé</span>
+            </div>
+
+            <!-- 6. Alertes & Audit -->
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-1 transition-all hover:border-slate-300 shadow-sm" id="wfStep6">
+              <div class="flex items-center justify-between">
+                <span class="text-[9px] font-extrabold uppercase text-slate-400">6. Alertes & Audit</span>
+                <span class="w-2 h-2 rounded-full bg-emerald-500" id="wfStep6Led"></span>
+              </div>
+              <span class="text-[11px] font-bold text-navy-900 leading-tight">Actionneurs & Rapports</span>
+              <span class="text-[10px] text-slate-600 font-mono truncate" id="wfStepAlertVal">Nominal (NF S 90-351)</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slot pour le Viewport 3D partagé -->
+        <div id="overviewViewportSlot" class="w-full">
+          <!-- SCÈNE 3D WEBGL IMMERSIVE THREE.JS + 4 BADGES EXACTEMENT POSITIONNÉS -->
+          <div class="relative w-full h-[550px] rounded-2xl overflow-hidden shadow-xl border border-slate-200/90 bg-slate-900" id="threeViewportContainer">
+            
+            <!-- Canvas 3D Three.js -->
+            <div id="webglCanvasContainer" class="w-full h-full cursor-grab active:cursor-grabbing"></div>
+
+            <!-- SVG Overlay pour lignes de repère d'ancrage 3D dynamique (Leader Lines) -->
+            <svg id="threeLeaderLinesSvg" class="absolute inset-0 w-full h-full pointer-events-none z-10 transition-opacity duration-300"></svg>
+
+            <!-- Barre d'outils flottante de la scène 3D (Ciblage caméra & Ancrage) -->
+            <div class="absolute top-3 left-3 z-30 flex items-center gap-1.5 bg-navy-950/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 shadow-lg text-xs">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">Caméra :</span>
+              <button type="button" class="btn-camera px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/10 hover:bg-clinical-blue hover:text-white text-slate-200 transition" data-cam="reset">Vue Globale</button>
+              <button type="button" class="btn-camera px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/10 hover:bg-clinical-blue hover:text-white text-slate-200 transition" data-cam="table">Table Stérile</button>
+              <button type="button" class="btn-camera px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/10 hover:bg-clinical-blue hover:text-white text-slate-200 transition" data-cam="door">Sas / Porte</button>
+              <button type="button" class="btn-camera px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/10 hover:bg-clinical-blue hover:text-white text-slate-200 transition" data-cam="ventilation">CVC / Volet</button>
+              <button type="button" class="btn-camera px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/10 hover:bg-clinical-blue hover:text-white text-slate-200 transition" data-cam="anesthesia">Anesthésie</button>
+              <div class="w-px h-4 bg-white/20 mx-1"></div>
+              <button type="button" id="btnToggleTracking" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-clinical-cyan/20 text-clinical-cyan hover:bg-clinical-cyan/30 transition flex items-center gap-1.5" title="Activer / Désactiver les lignes de repère d'ancrage 3D">
+                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> <span id="labelToggleTracking">Lignes 3D : ON</span>
+              </button>
+            </div>
+
+            <!-- Indication de manipulation 3D (discrète) -->
+            <div class="absolute bottom-3 left-4 text-[11px] text-white/70 bg-navy-950/60 backdrop-blur-md px-3 py-1.5 rounded-full pointer-events-none flex items-center gap-2 border border-white/10 z-20">
+              <i data-lucide="move-3d" class="w-3.5 h-3.5 text-clinical-cyan"></i>
+              <span>Clic gauche + glisser pour pivoter la salle 3D • Molette pour zoomer • Clic sur badge pour historique 24h</span>
+            </div>
+
+          <!-- =========================================================== -->
+          <!-- 4 BADGES FLOTTANTS GLASSMORPHISM (Positionnement exact)    -->
+          <!-- =========================================================== -->
+          <div class="absolute inset-0 pointer-events-none z-20" aria-label="Badges télémétriques temps réel">
+            
+            <!-- 1. Luminosité (Haut Centre, vers le scialytique) -->
+            <article class="pinned-badge card-lux absolute pointer-events-auto flex items-center gap-3.5 px-4 py-2.5 rounded-2xl bg-white/85 backdrop-blur-md border border-white/60 shadow-lg shadow-navy-950/10 transition-all duration-300 cursor-pointer" id="cardLux" tabindex="0">
+              <div class="w-9 h-9 flex items-center justify-center flex-shrink-0">
+                <!-- Icône soleil dorée avec rayons radiaux -->
+                <svg viewBox="0 0 24 24" class="w-8 h-8 text-amber-500 fill-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]">
+                  <circle cx="12" cy="12" r="5"/>
+                  <circle cx="12" cy="2.5" r="1.5"/>
+                  <circle cx="12" cy="21.5" r="1.5"/>
+                  <circle cx="2.5" cy="12" r="1.5"/>
+                  <circle cx="21.5" cy="12" r="1.5"/>
+                  <circle cx="5.3" cy="5.3" r="1.5"/>
+                  <circle cx="18.7" cy="18.7" r="1.5"/>
+                  <circle cx="5.3" cy="18.7" r="1.5"/>
+                  <circle cx="18.7" cy="5.3" r="1.5"/>
+                </svg>
+              </div>
+              <div class="flex flex-col leading-tight">
+                <span class="text-[12px] font-semibold text-slate-500">Luminosité</span>
+                <span class="text-2xl font-extrabold text-navy-950 tracking-tight font-mono" id="valLux">320 lx</span>
+              </div>
+            </article>
+
+            <!-- 2. Température (Milieu Gauche) -->
+            <article class="pinned-badge card-temp absolute pointer-events-auto flex items-center gap-3.5 px-4 py-2.5 rounded-2xl bg-white/85 backdrop-blur-md border border-white/60 shadow-lg shadow-navy-950/10 transition-all duration-300 cursor-pointer" id="cardTemp" tabindex="0">
+              <div class="w-9 h-9 flex items-center justify-center flex-shrink-0 text-clinical-blue">
+                <svg viewBox="0 0 24 24" class="w-8 h-8 stroke-current fill-blue-50 stroke-2">
+                  <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+                  <circle cx="11.5" cy="17.5" r="2.5" fill="#0284c7" stroke="none"/>
+                  <line x1="11.5" y1="8" x2="11.5" y2="15" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="flex flex-col leading-tight">
+                <span class="text-[12px] font-semibold text-slate-500">Température</span>
+                <span class="text-2xl font-extrabold text-navy-950 tracking-tight font-mono" id="valTemp">21.4 °C</span>
+              </div>
+            </article>
+
+            <!-- 3. Humidité (Bas Gauche) -->
+            <article class="pinned-badge card-hum absolute pointer-events-auto flex items-center gap-3.5 px-4 py-2.5 rounded-2xl bg-white/85 backdrop-blur-md border border-white/60 shadow-lg shadow-navy-950/10 transition-all duration-300 cursor-pointer" id="cardHum" tabindex="0">
+              <div class="w-9 h-9 flex items-center justify-center flex-shrink-0 text-clinical-blue">
+                <svg viewBox="0 0 24 24" class="w-7 h-7 fill-current">
+                  <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+                </svg>
+              </div>
+              <div class="flex flex-col leading-tight">
+                <span class="text-[12px] font-semibold text-slate-500">Humidité</span>
+                <span class="text-2xl font-extrabold text-navy-950 tracking-tight font-mono" id="valHum">48 %</span>
+              </div>
+            </article>
+
+            <!-- 4. Contact Porte (Bas Droite, devant la porte) -->
+            <article class="pinned-badge card-door absolute pointer-events-auto flex items-center gap-3.5 px-4 py-2.5 rounded-2xl bg-white/85 backdrop-blur-md border border-white/60 shadow-lg shadow-navy-950/10 transition-all duration-300 cursor-pointer" id="cardDoor" tabindex="0">
+              <div class="w-9 h-9 rounded-xl bg-green-600 text-white flex items-center justify-center flex-shrink-0 shadow-md shadow-green-600/30 transition-colors duration-300" id="cardDoorBadge">
+                <i data-lucide="lock" class="w-5 h-5" id="doorIconSvg"></i>
+              </div>
+              <div class="flex flex-col leading-tight">
+                <span class="text-[12px] font-semibold text-slate-500">Porte</span>
+                <span class="text-2xl font-extrabold text-green-600 tracking-tight transition-colors duration-300" id="valDoor">Fermée</span>
+              </div>
+            </article>
+
+          </div>
+        </div>
+
+        <!-- Barre de synthèse inférieure des actionneurs & CVC -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 px-6 rounded-2xl bg-white/90 backdrop-blur-md border border-slate-200/80 shadow-sm">
+          <div>
+            <div class="flex justify-between items-center">
+              <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Pression différentielle</span>
+              <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-100 text-green-700" id="badgePressState">+15 Pa OK</span>
+            </div>
+            <div class="flex items-baseline gap-2 mt-0.5">
+              <span class="text-lg font-bold text-navy-950 font-mono" id="kpiPressure">1018.0 <small class="text-xs text-slate-500">hPa</small></span>
+              <span class="text-[11px] font-semibold text-clinical-blue font-mono" id="kpiPressDelta">(ΔP: +15.2 Pa)</span>
+            </div>
+            <!-- Jauge visuelle de gradient de surpression stérile -->
+            <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden mt-1.5 flex relative" title="Zone de surpression stérile ISO 14644 (Norme NF S 90-351)">
+              <div class="w-1/4 bg-red-400" title="Dépression critique (< 0 Pa)"></div>
+              <div class="w-1/4 bg-amber-400" title="Pression limite (0 - 10 Pa)"></div>
+              <div class="w-1/2 bg-green-500" title="Surpression nominale (> 15 Pa)"></div>
+              <div id="pressureGaugeMarker" class="absolute w-2 h-3.5 -top-[3px] bg-slate-950 border border-white rounded shadow-md transition-all duration-500" style="left: 72%;"></div>
+            </div>
+            <span class="text-[10px] font-semibold text-green-600 block mt-1" id="kpiPressDesc">Surpression stérile active (ISO 5)</span>
+          </div>
+          <div>
+            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Volet de ventilation (SG90)</span>
+            <span class="text-lg font-bold text-navy-950 font-mono mt-0.5 block" id="kpiServo">0° <small class="text-xs text-slate-500">(Fermé)</small></span>
+            <span class="text-[11px] font-semibold text-slate-600" id="kpiFanStatus">Mode Automatique</span>
+          </div>
+          <div>
+            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Pente thermique (60s)</span>
+            <span class="text-lg font-bold text-navy-950 font-mono mt-0.5 block" id="kpiTempSlope">+0.00 <small class="text-xs text-slate-500">°C/min</small></span>
+            <span class="text-[11px] font-semibold text-green-600" id="kpiSlopeDesc">Stable</span>
+          </div>
+          <div>
+            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Conformité séance</span>
+            <span class="text-lg font-bold text-navy-950 font-mono mt-0.5 block" id="kpiComplianceRate">100 <small class="text-xs text-slate-500">%</small></span>
+            <span class="text-[11px] font-semibold text-green-600">Norme hospitalière NF S 90-351</span>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- VUE 2 : SALLE OPÉRATOIRE DÉTAILLÉE                              -->
+      <!-- =============================================================== -->
+      <section id="view-room" class="view-section hidden flex flex-col gap-4">
+        <div class="flex justify-between items-center p-4 px-6 rounded-2xl bg-white border border-slate-200 shadow-sm flex-wrap gap-4">
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-bold text-navy-950 uppercase tracking-wider">Ciblage caméra 3D :</span>
+            <button type="button" class="btn-camera px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition" data-cam="table">Table d'opération</button>
+            <button type="button" class="btn-camera px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition" data-cam="scialytic">Scialytique</button>
+            <button type="button" class="btn-camera px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition" data-cam="door">Porte & Sas</button>
+            <button type="button" class="btn-camera px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition" data-cam="ventilation">CVC / Ventilation</button>
+            <button type="button" class="btn-camera px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition" data-cam="anesthesia">Bras Anesthésie</button>
+            <button type="button" class="btn-camera px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition" data-cam="reset">Vue globale</button>
+          </div>
+          <span class="text-xs text-slate-500 font-medium">Double-clic sur un équipement 3D pour inspecter sa fiche.</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col gap-2">
+            <div class="flex items-center gap-2 text-clinical-blue font-bold text-sm">
+              <i data-lucide="sun" class="w-4 h-4 text-amber-500"></i>
+              <span>Éclairage Chirurgical & LDR</span>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Le scialytique projette un faisceau à angle réglable. La puissance lumineuse de la SpotLight WebGL est directement synchronisée avec la photorésistance (GPIO 34).
+            </p>
+          </div>
+          <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col gap-2">
+            <div class="flex items-center gap-2 text-clinical-blue font-bold text-sm">
+              <i data-lucide="wind" class="w-4 h-4 text-clinical-cyan"></i>
+              <span>Ventilation CVC & Servo SG90</span>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Le volet motorisé pivote entre 45° et 135° pour le balayage d'air filtré en surpression, régulé selon la température du capteur BME280 (GPIO 21/22).
+            </p>
+          </div>
+          <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col gap-2">
+            <div class="flex items-center gap-2 text-clinical-blue font-bold text-sm">
+              <i data-lucide="door-open" class="w-4 h-4 text-green-600"></i>
+              <span>Sas d'Accès & Ultrason HC-SR04</span>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Animation physique 3D de la porte calculée par GSAP (rotation 90°). Déclenche un calcul de risque aérobie si la porte reste ouverte plus de 30 secondes.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- VUE 3 : DONNÉES TEMPS RÉEL (Graphiques & Historique)            -->
+      <!-- =============================================================== -->
+      <section id="view-live" class="view-section hidden flex flex-col gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Graphique Température -->
+          <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            <div class="flex justify-between items-center mb-3">
+              <div>
+                <h3 class="text-sm font-bold text-navy-950">Température ambiante (°C)</h3>
+                <span class="text-[11px] text-slate-500">Zone de conformité : 20,0 – 24,0 °C</span>
+              </div>
+              <span class="px-2.5 py-1 rounded-full bg-slate-900 text-white font-mono text-xs font-bold" id="liveBadgeTemp">21.4 °C</span>
+            </div>
+            <div class="h-44"><canvas id="chartTemperature"></canvas></div>
+          </div>
+
+          <!-- Graphique Humidité -->
+          <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            <div class="flex justify-between items-center mb-3">
+              <div>
+                <h3 class="text-sm font-bold text-navy-950">Humidité relative (%)</h3>
+                <span class="text-[11px] text-slate-500">Plage aseptique : 30 – 60 %</span>
+              </div>
+              <span class="px-2.5 py-1 rounded-full bg-slate-900 text-white font-mono text-xs font-bold" id="liveBadgeHum">48 %</span>
+            </div>
+            <div class="h-44"><canvas id="chartHumidity"></canvas></div>
+          </div>
+
+          <!-- Graphique Luminosité & Pression -->
+          <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm md:col-span-2">
+            <div class="flex justify-between items-center mb-3">
+              <div>
+                <h3 class="text-sm font-bold text-navy-950">Luminosité scialytique (lx) & Pression (hPa)</h3>
+                <span class="text-[11px] text-slate-500">Surveillance d'acuité visuelle (>300 lx) et surpression</span>
+              </div>
+              <div class="flex gap-2">
+                <span class="px-2.5 py-1 rounded-full bg-slate-900 text-white font-mono text-xs font-bold" id="liveBadgeLux">320 lx</span>
+                <span class="px-2.5 py-1 rounded-full bg-slate-700 text-white font-mono text-xs font-bold" id="liveBadgePress">1018 hPa</span>
+              </div>
+            </div>
+            <div class="h-36"><canvas id="chartLightPressure"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Tableau chronologique -->
+        <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="text-sm font-bold text-navy-950">Journal des 20 dernières télémesures</h3>
+            <span class="text-xs text-slate-500 font-medium">Fenêtre 5 minutes • Fréquence 2 s</span>
+          </div>
+          <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                <tr>
+                  <th class="p-2.5 px-3">Horodatage</th>
+                  <th class="p-2.5 px-3">Temp. (°C)</th>
+                  <th class="p-2.5 px-3">Hum. (%)</th>
+                  <th class="p-2.5 px-3">Pression</th>
+                  <th class="p-2.5 px-3">Lumière</th>
+                  <th class="p-2.5 px-3">Porte</th>
+                  <th class="p-2.5 px-3">Ventilation</th>
+                  <th class="p-2.5 px-3">Risque AI</th>
+                  <th class="p-2.5 px-3">Statut</th>
+                </tr>
+              </thead>
+              <tbody id="telemetryTableBody" class="divide-y divide-slate-100 font-mono"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- VUE 4 : ÉVÉNEMENTS & CONFORMITÉ                                 -->
+      <!-- =============================================================== -->
+      <section id="view-events" class="view-section hidden flex flex-col gap-4">
+        <div class="p-4 px-6 rounded-2xl bg-white border border-slate-200 shadow-sm flex justify-between items-center flex-wrap gap-4">
+          <div class="flex gap-2">
+            <button type="button" class="filter-pill active px-3 py-1.5 rounded-full text-xs font-bold border transition" data-filter="ALL">Tous <span id="countAll">0</span></button>
+            <button type="button" class="filter-pill px-3 py-1.5 rounded-full text-xs font-bold border transition text-slate-600" data-filter="INFO">Info <span id="countInfo">0</span></button>
+            <button type="button" class="filter-pill px-3 py-1.5 rounded-full text-xs font-bold border transition text-amber-600" data-filter="WARNING">Alerte <span id="countWarn">0</span></button>
+            <button type="button" class="filter-pill px-3 py-1.5 rounded-full text-xs font-bold border transition text-red-600" data-filter="CRITICAL">Critique <span id="countCrit">0</span></button>
+            <button type="button" class="filter-pill px-3 py-1.5 rounded-full text-xs font-bold border transition text-purple-600" data-filter="FUSION_AI">Fusion AI <span id="countAi">0</span></button>
+          </div>
+          <div class="flex items-center gap-3">
+            <input type="search" id="eventSearchInput" class="px-3 py-1.5 rounded-full border border-slate-300 text-xs w-56 outline-none focus:border-clinical-blue" placeholder="Rechercher règle, message...">
+            <button type="button" id="btnAcknowledgeAll" class="px-4 py-1.5 rounded-lg bg-clinical-blue text-white text-xs font-bold hover:bg-blue-600 transition flex items-center gap-1.5">
+              <i data-lucide="check-check" class="w-4 h-4"></i> <span>Acquitter</span>
+            </button>
+          </div>
+        </div>
+        <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col gap-2 max-h-[560px] overflow-y-auto" id="eventsListContainer"></div>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- VUE 5 : RAPPORTS & AUDIT CLINIQUE                               -->
+      <!-- =============================================================== -->
+      <section id="view-reports" class="view-section hidden flex flex-col gap-4">
+        <div class="p-4 px-6 rounded-2xl bg-white border border-slate-200 shadow-sm flex justify-between items-center flex-wrap gap-4">
+          <div>
+            <h3 class="text-base font-bold text-navy-950">Rapport d'audit environnemental du bloc</h3>
+            <span class="text-xs text-slate-500 font-medium" id="reportGeneratedAt">Généré en direct</span>
+          </div>
+          <div class="flex gap-2.5">
+            <button type="button" id="btnExportHtml" class="px-3.5 py-2 rounded-lg bg-white border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50 transition flex items-center gap-1.5">
+              <i data-lucide="download" class="w-4 h-4"></i> <span>Export HTML</span>
+            </button>
+            <button type="button" id="btnExportCsv" class="px-3.5 py-2 rounded-lg bg-white border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50 transition flex items-center gap-1.5">
+              <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> <span>Export CSV</span>
+            </button>
+            <button type="button" id="btnPrintReport" class="px-4 py-2 rounded-lg bg-clinical-blue text-white text-xs font-bold hover:bg-blue-600 transition flex items-center gap-1.5">
+              <i data-lucide="printer" class="w-4 h-4"></i> <span>Imprimer / PDF</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="p-8 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col gap-6" id="printableReport">
+          <div class="text-center pb-4 border-b border-slate-200">
+            <h1 class="text-xl font-black text-navy-950 uppercase tracking-tight">Hôpital Universitaire — Département Chirurgical</h1>
+            <p class="text-xs text-slate-500 mt-1">Certification de Conformité Hygiénique & Confinement Stérile • Bloc OR-1</p>
+          </div>
+
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <span class="text-[11px] font-bold text-slate-500 uppercase">Période surveillée</span>
+              <span class="text-xl font-black text-navy-950 block mt-1" id="repDuration">00h 00m</span>
+              <span class="text-[11px] text-slate-400" id="repPointsCount">0 mesures</span>
+            </div>
+            <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <span class="text-[11px] font-bold text-slate-500 uppercase">Taux de conformité</span>
+              <span class="text-xl font-black text-green-600 block mt-1" id="repCompliance">100.0 %</span>
+              <span class="text-[11px] text-slate-400">Norme NF S 90-351</span>
+            </div>
+            <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <span class="text-[11px] font-bold text-slate-500 uppercase">Ouverture porte</span>
+              <span class="text-xl font-black text-navy-950 block mt-1" id="repDoorDuration">00:00</span>
+              <span class="text-[11px] text-slate-400" id="repDoorCount">0 cycle</span>
+            </div>
+            <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <span class="text-[11px] font-bold text-slate-500 uppercase">Risque maximal (AI)</span>
+              <span class="text-xl font-black text-navy-950 block mt-1" id="repMaxRisk">0 / 100</span>
+              <span class="text-[11px] text-slate-400" id="repAlertsCount">0 alerte</span>
+            </div>
+          </div>
+
+          <div>
+            <h4 class="text-xs font-bold uppercase text-navy-950 mb-2">Synthèse statistique des capteurs</h4>
+            <table class="w-full text-left text-xs border border-slate-200 rounded-lg overflow-hidden">
+              <thead class="bg-slate-50 font-bold border-b border-slate-200">
+                <tr><th class="p-2">Grandeur</th><th class="p-2">Norme</th><th class="p-2">Min</th><th class="p-2">Moyenne</th><th class="p-2">Max</th><th class="p-2">Statut</th></tr>
+              </thead>
+              <tbody id="reportStatsBody" class="divide-y divide-slate-100 font-mono"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- 3. TIROIR DE SIMULATION DÉMO RÉVÉLATEUR (Section 4)                  -->
+  <!-- =================================================================== -->
+  <aside id="simulationDrawer" class="fixed bottom-6 right-6 w-96 max-w-[calc(100vw-3rem)] z-50 rounded-2xl overflow-hidden shadow-2xl border border-white/80 bg-white/95 backdrop-blur-xl transition-all duration-300">
+    <div class="p-3.5 px-5 bg-gradient-to-r from-navy-900 to-navy-950 text-white flex justify-between items-center cursor-pointer" id="simToggleHeader">
+      <div class="flex items-center gap-2.5 font-bold text-xs">
+        <i data-lucide="sliders" class="w-4 h-4 text-clinical-cyan"></i>
+        <span>Panneau de simulation Démo</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] font-bold uppercase bg-clinical-cyan/20 text-clinical-cyan px-2 py-0.5 rounded-full" id="simModeTag">Simulateur</span>
+        <button type="button" id="simDrawerCollapseBtn" class="p-1 hover:bg-white/20 rounded">
+          <i data-lucide="chevron-down" class="w-4 h-4" id="simCollapseIcon"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="p-4 flex flex-col gap-3.5 max-h-[460px] overflow-y-auto text-xs" id="simDrawerBody">
+      <!-- 4 Sliders -->
+      <div class="flex flex-col gap-2.5">
+        <div>
+          <div class="flex justify-between font-semibold text-slate-700 mb-1">
+            <span>Température :</span>
+            <span class="text-clinical-blue font-bold font-mono" id="simValTemp">21.4 °C</span>
+          </div>
+          <input type="range" id="simSliderTemp" min="15.0" max="35.0" step="0.1" value="21.4" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-clinical-blue">
+        </div>
+
+        <div>
+          <div class="flex justify-between font-semibold text-slate-700 mb-1">
+            <span>Humidité :</span>
+            <span class="text-clinical-blue font-bold font-mono" id="simValHum">48 %</span>
+          </div>
+          <input type="range" id="simSliderHum" min="10" max="90" step="1" value="48" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-clinical-blue">
+        </div>
+
+        <div>
+          <div class="flex justify-between font-semibold text-slate-700 mb-1">
+            <span>Luminosité :</span>
+            <span class="text-clinical-blue font-bold font-mono" id="simValLux">320 lx</span>
+          </div>
+          <input type="range" id="simSliderLux" min="0" max="1000" step="10" value="320" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-clinical-blue">
+        </div>
+      </div>
+
+      <!-- Switch porte & Dérive -->
+      <div class="flex justify-between py-2 border-y border-slate-200 font-semibold text-slate-700">
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="simSwitchDoor" class="w-4 h-4 accent-clinical-blue rounded cursor-pointer">
+          <span>Ouvrir / Fermer Porte</span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="simSwitchDrift" checked class="w-4 h-4 accent-clinical-blue rounded cursor-pointer">
+          <span>Dérive automatique</span>
+        </label>
+      </div>
+
+      <!-- Scénarios d'évaluation clinique -->
+      <div>
+        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Scénarios d'incident :</span>
+        <div class="grid grid-cols-2 gap-1.5">
+          <button type="button" class="btn-scenario p-2 rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold text-slate-800 transition" data-scenario="normal">Normal (21.4°C)</button>
+          <button type="button" class="btn-scenario p-2 rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold text-slate-800 transition" data-scenario="door_open">Porte prolongée</button>
+          <button type="button" class="btn-scenario p-2 rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold text-slate-800 transition" data-scenario="temp_high">Surchauffe (26.8°C)</button>
+          <button type="button" class="btn-scenario p-2 rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold text-slate-800 transition" data-scenario="hum_high">Humidité (74%)</button>
+          <button type="button" class="btn-scenario col-span-2 p-2 rounded-lg bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold transition flex items-center justify-center gap-2 shadow-md shadow-red-600/30" data-scenario="critical_incident">
+            <i data-lucide="flame" class="w-4 h-4"></i> <span>Simuler Incident Critique (Asepsie)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Commandes actionneurs -->
+      <div>
+        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Actionneurs :</span>
+        <div class="flex gap-2">
+          <div class="flex-1 flex border border-slate-300 rounded-lg overflow-hidden">
+            <button type="button" class="seg-btn active flex-1 py-1 text-center font-bold bg-clinical-blue text-white" data-fan="auto">Auto</button>
+            <button type="button" class="seg-btn flex-1 py-1 text-center font-bold bg-white text-slate-700 hover:bg-slate-100" data-fan="on">Forcer</button>
+            <button type="button" class="seg-btn flex-1 py-1 text-center font-bold bg-white text-slate-700 hover:bg-slate-100" data-fan="off">Arrêt</button>
+          </div>
+          <button type="button" id="btnResetSimulation" class="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold flex items-center gap-1">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Modal Fiche Équipement -->
+  <div id="equipmentModal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" role="dialog" aria-modal="true">
+    <div class="w-full max-w-md p-6 bg-white rounded-2xl shadow-2xl border border-slate-200">
+      <div class="flex justify-between items-center mb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-clinical-blue text-white flex items-center justify-center"><i data-lucide="cpu" class="w-4 h-4"></i></div>
+          <h3 class="text-base font-bold text-navy-950" id="modalEquipTitle">Fiche Équipement</h3>
+        </div>
+        <button type="button" id="modalCloseBtn" class="p-1 text-slate-400 hover:text-slate-600 rounded"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div class="flex flex-col gap-2.5 text-xs">
+        <div class="flex justify-between border-b border-slate-100 pb-1.5"><span class="text-slate-500 font-medium">Rôle clinique :</span><span class="font-bold text-slate-800" id="modalEquipRole">--</span></div>
+        <div class="flex justify-between border-b border-slate-100 pb-1.5"><span class="text-slate-500 font-medium">Capteur associé :</span><span class="font-bold text-slate-800" id="modalEquipSensor">--</span></div>
+        <div class="flex justify-between border-b border-slate-100 pb-1.5"><span class="text-slate-500 font-medium">Broche ESP32 :</span><span class="font-mono font-bold text-clinical-blue" id="modalEquipPin">--</span></div>
+        <div class="flex justify-between border-b border-slate-100 pb-1.5"><span class="text-slate-500 font-medium">Valeur mesurée :</span><span class="font-mono font-bold text-green-600 text-sm" id="modalEquipValue">--</span></div>
+        <div class="p-3 bg-slate-50 rounded-xl text-slate-600 leading-relaxed mt-2" id="modalEquipDesc">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- 4. TIROIR LATÉRAL D'HISTORIQUE TÉLÉMÉTRIE CAPTEUR (Drawer 24h)     -->
+  <!-- =================================================================== -->
+  <aside id="sensorHistoryDrawer" class="fixed top-0 right-0 h-full w-[430px] max-w-[92vw] bg-white shadow-2xl border-l border-slate-200 z-50 transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+    <!-- En-tête du tiroir -->
+    <div class="p-5 bg-gradient-to-r from-navy-900 to-navy-950 text-white flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-clinical-blue/20 text-clinical-cyan flex items-center justify-center border border-clinical-cyan/30 flex-shrink-0" id="drawerSensorIcon">
+          <i data-lucide="activity" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-white leading-tight" id="drawerSensorTitle">Capteur Température BME280</h3>
+          <span class="text-[11px] text-clinical-cyan font-mono" id="drawerSensorPin">I2C (0x77) • GPIO 21 / 22</span>
+        </div>
+      </div>
+      <button type="button" id="drawerCloseBtn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <!-- Corps du tiroir -->
+    <div class="flex-1 overflow-y-auto p-5 flex flex-col gap-4 text-xs">
+      <!-- Badge KPI actuel -->
+      <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex justify-between items-center">
+        <div>
+          <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Mesure en Direct</span>
+          <span class="text-3xl font-black text-navy-950 font-mono mt-0.5 block" id="drawerCurrentVal">21.4 °C</span>
+          <span class="text-[11px] font-bold text-green-600 flex items-center gap-1 mt-0.5" id="drawerStatusTag">
+            <i data-lucide="check" class="w-3.5 h-3.5"></i> <span>Dans la plage nominale</span>
+          </span>
+        </div>
+        <div class="text-right flex flex-col gap-1 font-mono">
+          <div class="text-[11px]"><span class="text-slate-400">Min :</span> <strong id="drawerStatMin" class="text-slate-700">20.8 °C</strong></div>
+          <div class="text-[11px]"><span class="text-slate-400">Moy :</span> <strong id="drawerStatAvg" class="text-slate-700">21.5 °C</strong></div>
+          <div class="text-[11px]"><span class="text-slate-400">Max :</span> <strong id="drawerStatMax" class="text-slate-700">22.3 °C</strong></div>
+        </div>
+      </div>
+
+      <!-- Graphique d'historique 24h avec bandes de conformité -->
+      <div class="p-4 rounded-xl bg-white border border-slate-200 shadow-sm flex flex-col gap-2">
+        <div class="flex justify-between items-center">
+          <h4 class="font-bold text-slate-800">Courbe de tendance (Séance active)</h4>
+          <span class="text-[10px] text-slate-400 font-mono">2 s/point</span>
+        </div>
+        <div class="h-44 w-full">
+          <canvas id="drawerSensorChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Norme hospitalière NF S 90-351 -->
+      <div class="p-4 rounded-xl bg-blue-50/70 border border-blue-200/80 text-blue-950 leading-relaxed">
+        <h4 class="font-bold mb-1 flex items-center gap-1.5 text-clinical-blue">
+          <i data-lucide="shield-check" class="w-4 h-4"></i>
+          <span id="drawerNormTitle">Norme de Confinement NF S 90-351</span>
+        </h4>
+        <p class="text-[11px] text-slate-700" id="drawerNormDesc">
+          Pour la classe ISO 5 (chirurgie orthopédique et vasculaire), la température doit être strictement régulée entre 20,0°C et 24,0°C pour limiter le stress chirurgical et garantir l'asepsie.
+        </p>
+      </div>
+
+      <!-- Événements et anomalies de ce capteur -->
+      <div>
+        <h4 class="font-bold text-slate-800 mb-2">Historique des alertes sur ce capteur</h4>
+        <div id="drawerSensorEventsList" class="flex flex-col gap-1.5 max-h-44 overflow-y-auto">
+          <!-- Injecté dynamiquement -->
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Overlay d'assombrissement pour le tiroir -->
+  <div id="drawerBackdrop" class="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-40 hidden transition-opacity"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
